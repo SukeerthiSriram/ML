@@ -1,0 +1,96 @@
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# Load the dataset
+data_path = r'malicious_phish.csv'
+data = pd.read_csv(data_path)
+
+# Filter relevant classes
+classes = ['benign', 'defacement', 'phishing', 'malware']
+data = data[data['type'].isin(classes)]
+
+# Display the class distribution
+class_distribution = data['type'].value_counts()
+print("Class Distribution:")
+print(class_distribution)
+
+# Plot the class distribution
+plt.figure(figsize=(8, 6))
+sns.barplot(x=class_distribution.index, y=class_distribution.values, palette="Set2")
+plt.title("Class Distribution of URL Types")
+plt.ylabel("Number of Samples")
+plt.xlabel("Class")
+plt.show()
+
+# Token Length Distribution Analysis
+data['url_length'] = data['url'].apply(lambda x: len(x))
+
+# Plot URL length distribution by class
+plt.figure(figsize=(10, 6))
+sns.boxplot(x='type', y='url_length', data=data, palette="Set3")
+plt.title("URL Length Distribution by Class")
+plt.ylabel("URL Length")
+plt.xlabel("Class")
+plt.show()
+
+# Load the dataset
+data_path = r'malicious_phish.csv'
+data = pd.read_csv(data_path)
+
+# Filter relevant classes
+classes = ['benign', 'defacement', 'phishing', 'malware']
+data = data[data['type'].isin(classes)]
+
+# Combine 'defacement', 'phishing', and 'malware' into one class 'malware'
+data['type'] = data['type'].replace({'defacement': 'malware', 'phishing': 'malware'})
+
+# Statistical summary of URL length for each class
+data['url_length'] = data['url'].apply(lambda x: len(x))
+length_stats = data.groupby('type')['url_length'].describe()
+
+print("URL Length Statistics:")
+print(length_stats)
+
+# Proportions of each class after combining
+class_proportions = data['type'].value_counts(normalize=True) * 100
+print("\nClass Proportions (in %):")
+print(class_proportions)
+
+# Plot the class distribution
+plt.figure(figsize=(8, 6))
+sns.barplot(x=class_proportions.index, y=class_proportions.values, palette="Set2")
+plt.title("Proportions of Classes After Combining")
+plt.ylabel("Percentage of Samples")
+plt.xlabel("Class")
+plt.show()
+
+# Plot the distribution of URL lengths by class
+plt.figure(figsize=(10, 6))
+sns.boxplot(x='type', y='url_length', data=data, palette="Set3")
+plt.title("URL Length Distribution by Class")
+plt.ylabel("URL Length")
+plt.xlabel("Class")
+plt.show()
+
+# Additional statistics: Mean and standard deviation of URL lengths across all samples
+mean_length = data['url_length'].mean()
+std_length = data['url_length'].std()
+
+print(f"\nOverall URL Length Mean: {mean_length:.2f}")
+print(f"Overall URL Length Standard Deviation: {std_length:.2f}")
+
+# Class distribution for counts
+class_distribution = data['type'].value_counts()
+print("\nClass Distribution (Counts):")
+
+print(class_distribution)
+
+# Display the first few samples to understand the dataset better
+print("\nFirst 5 Samples of the Data:")
+print(data.head())
+
+
+
+
+
