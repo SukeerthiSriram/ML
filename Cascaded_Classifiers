@@ -1,0 +1,107 @@
+import torch
+import joblib
+import seaborn as sns
+import matplotlib.pyplot as plt
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import (
+    classification_report,
+    confusion_matrix,
+    accuracy_score,
+    precision_score,
+    recall_score,
+    f1_score
+)
+import os
+
+# Check if GPU is available and set the device
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+print(f"Using device: {device}")
+
+# Set the path for model and data
+extracted_features_dir = os.path.join('extracted_features')
+path = 'extracted_features'
+model_filename = os.path.join('logistic_regression_model.pkl')
+
+# Load the combined BERT+BART training and testing features
+X_train_combined = torch.load(os.path.join(extracted_features_dir, 'X_train_combined.pt')).cpu().numpy()
+X_test_combined = torch.load(os.path.join(extracted_features_dir, 'X_test_combined.pt')).cpu().numpy()
+y_train = joblib.load(os.path.join(path, 'y_train.pkl'))
+y_test = joblib.load(os.path.join(path, 'y_test.pkl'))
+
+# Load Logistic Regression model
+loaded_logistic_model = joblib.load(model_filename)
+print(f"Model loaded from {model_filename}")
+
+# Make predictions with Logistic Regression
+y_pred_logistic = loaded_logistic_model.predict(X_test_combined)
+
+# Evaluate Logistic Regression model
+print("\nLogistic Regression Model Evaluation:")
+print(classification_report(y_test, y_pred_logistic, target_names=['benign', 'malware']))
+logistic_conf_matrix = confusion_matrix(y_test, y_pred_logistic)
+
+# Plot confusion matrix for Logistic Regression
+plt.figure(figsize=(6, 4))
+sns.heatmap(logistic_conf_matrix, annot=True, fmt='d', cmap='Blues', xticklabels=['benign', 'malware'], yticklabels=['benign', 'malware'])
+plt.xlabel('Predicted Labels')
+plt.ylabel('True Labels')
+plt.title('Confusion Matrix - Logistic Regression')
+plt.show()
+
+# Metrics for Logistic Regression
+accuracy_logistic = accuracy_score(y_test, y_pred_logistic)
+precision_logistic = precision_score(y_test, y_pred_logistic)
+recall_logistic = recall_score(y_test, y_pred_logistic)
+f1_logistic = f1_score(y_test, y_pred_logistic)
+print(f"Logistic Regression - Accuracy: {accuracy_logistic:.4f}, Precision: {precision_logistic:.4f}, Recall: {recall_logistic:.4f}, F1 Score: {f1_logistic:.4f}")
+
+# Train and evaluate KNN model
+knn = KNeighborsClassifier(n_neighbors=5)
+knn.fit(X_train_combined, y_train)
+y_pred_knn = knn.predict(X_test_combined)
+
+print("\nKNN Model Evaluation:")
+print(classification_report(y_test, y_pred_knn, target_names=['benign', 'malware']))
+knn_conf_matrix = confusion_matrix(y_test, y_pred_knn)
+
+# Plot confusion matrix for KNN
+plt.figure(figsize=(6, 4))
+sns.heatmap(knn_conf_matrix, annot=True, fmt='d', cmap='Blues', xticklabels=['benign', 'malware'], yticklabels=['benign', 'malware'])
+plt.xlabel('Predicted Labels')
+plt.ylabel('True Labels')
+plt.title('Confusion Matrix - KNN')
+plt.show()
+
+# Metrics for KNN
+accuracy_knn = accuracy_score(y_test, y_pred_knn)
+precision_knn = precision_score(y_test, y_pred_knn)
+recall_knn = recall_score(y_test, y_pred_knn)
+f1_knn = f1_score(y_test, y_pred_knn)
+print(f"KNN - Accuracy: {accuracy_knn:.4f}, Precision: {precision_knn:.4f}, Recall: {recall_knn:.4f}, F1 Score: {f1_knn:.4f}")
+
+# Cascading Logistic Regression predictions into KNN
+X_train_cascade = loaded_logistic_model.predict(X_train_combined).reshape(-1, 1)
+X_test_cascade = y_pred_logistic.reshape(-1, 1)
+knn_cascade = KNeighborsClassifier(n_neighbors=5)
+knn_cascade.fit(X_train_cascade, y_train)
+y_pred_cascade = knn_cascade.predict(X_test_cascade)
+
+print("\nCascaded Model (Logistic Regression + KNN) Evaluation:")
+print(classification_report(y_test, y_pred_cascade, target_names=['benign', 'malware']))
+cascade_conf_matrix = confusion_matrix(y_test, y_pred_cascade)
+
+# Plot confusion matrix for Cascaded Model
+plt.figure(figsize=(6, 4))
+sns.heatmap(cascade_conf_matrix, annot=True, fmt='d', cmap='Blues', xticklabels=['benign', 'malware'], yticklabels=['benign', 'malware'])
+plt.xlabel('Predicted Labels')
+plt.ylabel('True Labels')
+plt.title('Confusion Matrix - Cascaded Logistic Regression + KNN')
+plt.show()
+
+# Metrics for Cascaded Model
+accuracy_cascade = accuracy_score(y_test, y_pred_cascade)
+precision_cascade = precision_score(y_test, y_pred_cascade)
+recall_cascade = recall_score(y_test, y_pred_cascade)
+f1_cascade = f1_score(y_test, y_pred_cascade)
+print(f"Cascaded Model - Accuracy: {accuracy_cascade:.4f}, Precision: {precision_cascade:.4f}, Recall: {recall_cascade:.4f}, F1 Score: {f1_cascade:.4f}")
