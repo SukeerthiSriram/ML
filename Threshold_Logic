@@ -1,0 +1,122 @@
+import torch
+import joblib
+import seaborn as sns
+import matplotlib.pyplot as plt
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import (
+    classification_report,
+    confusion_matrix,
+    accuracy_score,
+    precision_score,
+    recall_score,
+    f1_score
+)
+import os
+
+# Check if GPU is available and set the device
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+print(f"Using device: {device}")
+
+# Set the path for model and data
+extracted_features_dir = os.path.join('extracted_features')
+path = 'extracted_features'
+model_filename = os.path.join('logistic_regression_model.pkl')
+
+# Load the combined BERT+BART training and testing features
+X_train_combined = torch.load(os.path.join(extracted_features_dir, 'X_train_combined.pt')).cpu().numpy()
+X_test_combined = torch.load(os.path.join(extracted_features_dir, 'X_test_combined.pt')).cpu().numpy()
+y_train = joblib.load(os.path.join(path, 'y_train.pkl'))
+y_test = joblib.load(os.path.join(path, 'y_test.pkl'))
+
+# Load Logistic Regression model
+loaded_logistic_model = joblib.load(model_filename)
+print(f"Model loaded from {model_filename}")
+
+# Make predictions with Logistic Regression
+y_pred_logistic = loaded_logistic_model.predict(X_test_combined)
+y_pred_logistic_probs = loaded_logistic_model.predict_proba(X_test_combined)
+
+# Evaluate Logistic Regression model
+print("\nLogistic Regression Model Evaluation:")
+print(classification_report(y_test, y_pred_logistic, target_names=['benign', 'malware']))
+logistic_conf_matrix = confusion_matrix(y_test, y_pred_logistic)
+
+# Plot confusion matrix for Logistic Regression
+plt.figure(figsize=(6, 4))
+sns.heatmap(logistic_conf_matrix, annot=True, fmt='d', cmap='Blues', xticklabels=['benign', 'malware'], yticklabels=['benign', 'malware'])
+plt.xlabel('Predicted Labels')
+plt.ylabel('True Labels')
+plt.title('Confusion Matrix - Logistic Regression')
+plt.show()
+
+# Metrics for Logistic Regression
+accuracy_logistic = accuracy_score(y_test, y_pred_logistic)
+precision_logistic = precision_score(y_test, y_pred_logistic)
+recall_logistic = recall_score(y_test, y_pred_logistic)
+f1_logistic = f1_score(y_test, y_pred_logistic)
+print(f"Logistic Regression - Accuracy: {accuracy_logistic:.4f}, Precision: {precision_logistic:.4f}, Recall: {recall_logistic:.4f}, F1 Score: {f1_logistic:.4f}")
+
+# Train and evaluate KNN model
+knn = KNeighborsClassifier(n_neighbors=5)
+knn.fit(X_train_combined, y_train)
+y_pred_knn = knn.predict(X_test_combined)
+
+print("\nKNN Model Evaluation:")
+print(classification_report(y_test, y_pred_knn, target_names=['benign', 'malware']))
+knn_conf_matrix = confusion_matrix(y_test, y_pred_knn)
+
+# Plot confusion matrix for KNN
+plt.figure(figsize=(6, 4))
+sns.heatmap(knn_conf_matrix, annot=True, fmt='d', cmap='Blues', xticklabels=['benign', 'malware'], yticklabels=['benign', 'malware'])
+plt.xlabel('Predicted Labels')
+plt.ylabel('True Labels')
+plt.title('Confusion Matrix - KNN')
+plt.show()
+
+# Metrics for KNN
+accuracy_knn = accuracy_score(y_test, y_pred_knn)
+precision_knn = precision_score(y_test, y_pred_knn)
+recall_knn = recall_score(y_test, y_pred_knn)
+f1_knn = f1_score(y_test, y_pred_knn)
+print(f"KNN - Accuracy: {accuracy_knn:.4f}, Precision: {precision_knn:.4f}, Recall: {recall_knn:.4f}, F1 Score: {f1_knn:.4f}")
+
+# Modified cascading logic: Conditional KNN based on Logistic Regression confidence
+confidence_threshold = 0.87  # Set a threshold for confidence
+
+# Initialize an empty list to store final predictions
+y_pred_final = []
+
+# Process each sample based on the confidence threshold
+for i in range(len(y_pred_logistic)):
+    max_confidence = max(y_pred_logistic_probs[i])
+    
+    if max_confidence >= confidence_threshold:
+        # Use Logistic Regression prediction if confidence is high enough
+        y_pred_final.append(y_pred_logistic[i])
+    else:
+        # Use KNN prediction if confidence is below the threshold
+        knn_input = X_test_combined[i].reshape(1, -1)  # Use the corresponding feature vector for KNN
+        knn_pred = knn.predict(knn_input)
+        y_pred_final.append(knn_pred[0])
+
+# Evaluate the modified cascaded model
+print("\nModified Cascaded Model (Logistic Regression + Conditional KNN) Evaluation:")
+print(classification_report(y_test, y_pred_final, target_names=['benign', 'malware']))
+modified_cascade_conf_matrix = confusion_matrix(y_test, y_pred_final)
+
+# Plot confusion matrix for the modified cascaded model
+plt.figure(figsize=(6, 4))
+sns.heatmap(modified_cascade_conf_matrix, annot=True, fmt='d', cmap='Blues', xticklabels=['benign', 'malware'], yticklabels=['benign', 'malware'])
+plt.xlabel('Predicted Labels')
+plt.ylabel('True Labels')
+plt.title('Confusion Matrix - Modified Cascaded Logistic Regression + Conditional KNN')
+plt.show()
+
+# Metrics for the modified cascaded model
+accuracy_modified_cascade = accuracy_score(y_test, y_pred_final)
+precision_modified_cascade = precision_score(y_test, y_pred_final)
+recall_modified_cascade = recall_score(y_test, y_pred_final)
+f1_modified_cascade = f1_score(y_test, y_pred_final)
+print(f"Modified Cascaded Model - Accuracy: {accuracy_modified_cascade:.4f}, Precision: {precision_modified_cascade:.4f}, Recall: {recall_modified_cascade:.4f}, F1 Score: {f1_modified_cascade:.4f}")
+print('confidence_threshold::::', confidence_threshold)
