@@ -1,0 +1,234 @@
+import os
+import pandas as pd
+import torch
+import joblib
+import re  # For removing special characters
+from transformers import DistilBertTokenizer, DistilBertModel, BartTokenizer, BartModel
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report, confusion_matrix, accuracy_score, precision_score, recall_score, f1_score
+from tqdm import tqdm  # Import tqdm for progress bars
+import seaborn as sns
+import matplotlib.pyplot as plt
+import numpy as np
+
+# Check if GPU is available and set the device
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+print(f"Using device: {device}")
+
+# Load the dataset
+data_path = r'malicious_phish.csv'
+data = pd.read_csv(data_path)
+
+# Filter relevant classes
+classes = ['benign', 'defacement', 'phishing', 'malware']
+data = data[data['type'].isin(classes)]
+
+# Combine defacement, phishing, and malware into a single 'malware' label
+data['label'] = data['type'].apply(lambda x: 0 if x == 'benign' else 1)
+
+# Balance the dataset
+benign_data = data[data['label'] == 0]
+malware_data = data[data['label'] == 1]
+
+# Check sizes
+benign_size = len(benign_data)
+malware_size = len(malware_data)
+
+# Concatenate benign and malware data (Balancing is optional, as seen in your commented code)
+balanced_data = pd.concat([benign_data, malware_data])
+
+# Preprocessing function
+def preprocess_url(url):
+    # Lowercase the URL
+    url = url.lower()
+    # Remove special characters (only keep alphanumeric and some URL-related characters)
+    url = re.sub(r'[^a-zA-Z0-9./:?&=_-]', '', url)
+    return url
+
+# Apply preprocessing to the URLs
+balanced_data['url'] = balanced_data['url'].apply(preprocess_url)
+
+# Split data for training and testing
+X_train, X_test, y_train, y_test = train_test_split(balanced_data['url'], balanced_data['label'], test_size=0.2, random_state=42)
+
+# Load tokenizers and models
+distilbert_tokenizer = DistilBertTokenizer.from_pretrained('distilbert-base-uncased')
+bart_tokenizer = BartTokenizer.from_pretrained('facebook/bart-base')
+
+distilbert_model = DistilBertModel.from_pretrained('distilbert-base-uncased').to(device)
+bart_model = BartModel.from_pretrained('facebook/bart-base').to(device)
+
+# Function to tokenize and extract features
+def extract_features(urls, tokenizer, model, max_len=64):
+    # Tokenize URLs using the provided tokenizer
+    inputs = tokenizer(urls.tolist(), padding='max_length', truncation=True, max_length=max_len, return_tensors='pt').to(device)
+    with torch.no_grad():
+        outputs = model(**inputs)
+        features = outputs.last_hidden_state.mean(dim=1)  # Use mean pooling
+    return features
+
+# Extract features with progress bar
+def process_features(urls, tokenizer, model, max_len=64, batch_size=16):
+    features_list = []
+    num_batches = (len(urls) + batch_size - 1) // batch_size  # Calculate the number of batches
+    for i in tqdm(range(0, len(urls), batch_size), desc="Extracting Features", unit="batch"):
+        batch_urls = urls[i:i + batch_size]
+        batch_features = extract_features(batch_urls, tokenizer, model, max_len)
+        features_list.append(batch_features)
+    return torch.cat(features_list)
+
+# Extract features for BERT (Move computations to GPU)
+X_train_distilbert = process_features(X_train, distilbert_tokenizer, distilbert_model)
+X_test_distilbert = process_features(X_test, distilbert_tokenizer, distilbert_model)
+
+# Extract features for BART (Move computations to GPU)
+X_train_bart = process_features(X_train, bart_tokenizer, bart_model)
+X_test_bart = process_features(X_test, bart_tokenizer, bart_model)
+# Path to save features and labels
+save_dir = 'extracted_features/'
+if not os.path.exists(save_dir):
+    os.makedirs(save_dir)
+
+# Function to save features
+def save_features(features, file_name):
+    save_path = os.path.join(save_dir, file_name)
+    torch.save(features, save_path)
+    print(f"Features saved to {save_path}")
+
+# Function to save labels
+def save_labels(labels, file_name):
+    save_path = os.path.join(save_dir, file_name)
+    joblib.dump(labels, save_path)
+    print(f"Labels saved to {save_path}")
+
+# Save extracted features
+save_features(X_train_distilbert, 'X_train_distilbert.pt')
+save_features(X_test_distilbert, 'X_test_distilbert.pt')
+save_features(X_train_bart, 'X_train_bart.pt')
+save_features(X_test_bart, 'X_test_bart.pt')
+
+# Save labels
+save_labels(y_train, 'y_train.pkl')
+save_labels(y_test, 'y_test.pkl')
+
+#Loading features (if needed later)
+X_train_distilbert = load_features('X_train_distilbert.pt')
+X_test_distilbert = load_features('X_test_distilbert.pt')
+X_train_bart = load_features('X_train_bart.pt')
+X_test_bart = load_features('X_test_bart.pt')
+
+# Combine features from BERT and BART
+X_train_combined = torch.cat([X_train_distilbert, X_train_bart], dim=1).cpu()  # Move back to CPU for sklearn
+X_test_combined = torch.cat([X_test_distilbert, X_test_bart], dim=1).cpu()
+
+# Save the combined features (optional)
+save_features(X_train_combined, 'X_train_combined.pt')
+save_features(X_test_combined, 'X_test_combined.pt')
+
+# Train logistic regression
+clf = LogisticRegression(max_iter=1000)
+print("Training Logistic Regression Model...")
+clf.fit(X_train_combined.numpy(), y_train)
+
+# Make predictions and evaluate
+y_pred = clf.predict(X_test_combined.numpy())
+print(classification_report(y_test, y_pred))
+
+# Save the trained model
+model_filename = 'logistic_regression_model.pkl'
+joblib.dump(clf, model_filename)
+print(f"Model saved to {model_filename}")
+
+
+
+# Assume that 'y_test' and 'y_pred' have only two labels: 0 (benign) and 1 (malware)
+
+model_filename = 'logistic_regression_model.pkl'
+# Define the new labels
+binary_classes = ['benign', 'malware']
+
+# Load the trained model
+loaded_model = joblib.load(model_filename)
+print(f"Model loaded from {model_filename}")
+
+# Make predictions and evaluate with the loaded model
+y_pred = loaded_model.predict(X_test_combined.numpy())
+print(classification_report(y_test, y_pred, target_names=binary_classes))
+
+# Compute confusion matrix for binary classification (benign vs malware)
+conf_matrix = confusion_matrix(y_test, y_pred)
+print("Confusion Matrix (benign=0, malware=1):\n", conf_matrix)
+
+# Plot confusion matrix
+plt.figure(figsize=(8, 6))
+sns.heatmap(conf_matrix, annot=True, fmt='d', cmap='Blues', xticklabels=binary_classes, yticklabels=binary_classes)
+plt.xlabel('Predicted Labels')
+plt.ylabel('True Labels')
+plt.title('Confusion Matrix (Binary Classification)')
+plt.show()
+
+# Calculate and print individual metrics
+accuracy = accuracy_score(y_test, y_pred)
+precision = precision_score(y_test, y_pred)
+recall = recall_score(y_test, y_pred)
+f1 = f1_score(y_test, y_pred)
+
+print(f"Accuracy: {accuracy:.4f}")
+print(f"Precision: {precision:.4f}")
+print(f"Recall: {recall:.4f}")
+print(f"F1 Score: {f1:.4f}")
+
+
+# BERT ONLY
+# Since we already have the features saved, we only need to load the features and not run the above code.
+# Function to load features
+def load_features(file_name):
+    load_path = os.path.join(save_dir, file_name)
+    features = torch.load(load_path)
+    print(f"Features loaded from {load_path}")
+    return features
+
+# Load the pre-extracted DistilBERT features
+X_train_distilbert = load_features('X_train_distilbert.pt')
+X_test_distilbert = load_features('X_test_distilbert.pt')
+
+# Move features to CPU for sklearn
+X_train_distilbert = X_train_distilbert.cpu()
+X_test_distilbert = X_test_distilbert.cpu()
+
+# Train logistic regression model using only DistilBERT features
+clf = LogisticRegression(max_iter=1000)
+print("Training Logistic Regression Model using DistilBERT features Only...")
+clf.fit(X_train_distilbert.numpy(), y_train)
+
+# Make predictions and evaluate
+y_pred = clf.predict(X_test_distilbert.numpy())
+print(classification_report(y_test, y_pred))
+
+# Compute confusion matrix for binary classification (benign vs malware)
+conf_matrix = confusion_matrix(y_test, y_pred)
+print("Confusion Matrix (benign=0, malware=1):\n", conf_matrix)
+
+# Plot confusion matrix
+plt.figure(figsize=(8, 6))
+sns.heatmap(conf_matrix, annot=True, fmt='d', cmap='Blues', xticklabels=['benign', 'malware'], yticklabels=['benign', 'malware'])
+plt.xlabel('Predicted Labels')
+plt.ylabel('True Labels')
+plt.title('Confusion Matrix (Binary Classification - DistilBERT Only)')
+plt.show()
+
+# Calculate and print individual metrics
+accuracy = accuracy_score(y_test, y_pred)
+precision = precision_score(y_test, y_pred)
+recall = recall_score(y_test, y_pred)
+f1 = f1_score(y_test, y_pred)
+
+print(f"Accuracy: {accuracy:.4f}")
+print(f"Precision: {precision:.4f}")
+print(f"Recall: {recall:.4f}")
+print(f"F1 Score: {f1:.4f}")
+
+
+
+
