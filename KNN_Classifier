@@ -1,0 +1,48 @@
+#KNN Classifier
+
+import torch
+import joblib
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.metrics import accuracy_score
+import os
+import matplotlib.pyplot as plt
+
+# Set the path for data
+'''path = '/content/drive/My Drive/BART_BERT_ML'
+extracted_features_dir = os.path.join(path, 'extracted_features')'''
+extracted_features_dir = 'extracted_features'
+# Load the combined BERT+BART training and testing features
+X_train_combined = torch.load(os.path.join(extracted_features_dir, 'X_train_combined.pt')).cpu().numpy()
+X_test_combined = torch.load(os.path.join(extracted_features_dir, 'X_test_combined.pt')).cpu().numpy()
+'''y_train = joblib.load(os.path.join(path, 'y_train.pkl'))
+y_test = joblib.load(os.path.join(path, 'y_test.pkl'))'''
+
+y_train = joblib.load(os.path.join('extracted_features', 'y_train.pkl'))
+y_test = joblib.load(os.path.join('extracted_features', 'y_test.pkl'))
+
+# Define range for K values
+k_values = range(45, 100)
+accuracy_scores = []
+
+# Train and evaluate KNN for each K
+for k in k_values:
+    knn = KNeighborsClassifier(n_neighbors=k)
+    knn.fit(X_train_combined, y_train)
+    y_pred = knn.predict(X_test_combined)
+    accuracy = accuracy_score(y_test, y_pred)
+    accuracy_scores.append(accuracy)
+    print(f"K={k} -> Accuracy: {accuracy:.4f}")
+
+# Find the best K with maximum accuracy
+best_k = k_values[accuracy_scores.index(max(accuracy_scores))]
+best_accuracy = max(accuracy_scores)
+print(f"\nBest K: {best_k} with Accuracy: {best_accuracy:.4f}")
+
+# Plot accuracy for each K
+plt.figure(figsize=(10, 6))
+plt.plot(k_values, accuracy_scores, marker='o', linestyle='-', color='b')
+plt.xlabel('K Value')
+plt.ylabel('Accuracy')
+plt.title('KNN Accuracy for Different K Values')
+plt.xticks(k_values)
+plt.show()
