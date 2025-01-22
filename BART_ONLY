@@ -1,0 +1,48 @@
+#BART ONLY
+
+# Function to load features
+def load_features(file_name):
+    load_path = os.path.join(save_dir, file_name)
+    features = torch.load(load_path)
+    print(f"Features loaded from {load_path}")
+    return features
+
+# Load the pre-extracted BART features
+X_train_bart = load_features('X_train_bart.pt')
+X_test_bart = load_features('X_test_bart.pt')
+
+# Move features to CPU for sklearn
+X_train_bart = X_train_bart.cpu()
+X_test_bart = X_test_bart.cpu()
+
+# Train logistic regression model using only BART features
+clf = LogisticRegression(max_iter=1000)
+print("Training Logistic Regression Model using BART features Only...")
+clf.fit(X_train_bart.numpy(), y_train)
+
+# Make predictions and evaluate
+y_pred = clf.predict(X_test_bart.numpy())
+print(classification_report(y_test, y_pred))
+
+# Compute confusion matrix for binary classification (benign vs malware)
+conf_matrix = confusion_matrix(y_test, y_pred)
+print("Confusion Matrix (benign=0, malware=1):\n", conf_matrix)
+
+# Plot confusion matrix
+plt.figure(figsize=(8, 6))
+sns.heatmap(conf_matrix, annot=True, fmt='d', cmap='Blues', xticklabels=['benign', 'malware'], yticklabels=['benign', 'malware'])
+plt.xlabel('Predicted Labels')
+plt.ylabel('True Labels')
+plt.title('Confusion Matrix (Binary Classification - BART Only)')
+plt.show()
+
+# Calculate and print individual metrics
+accuracy = accuracy_score(y_test, y_pred)
+precision = precision_score(y_test, y_pred)
+recall = recall_score(y_test, y_pred)
+f1 = f1_score(y_test, y_pred)
+
+print(f"Accuracy: {accuracy:.4f}")
+print(f"Precision: {precision:.4f}")
+print(f"Recall: {recall:.4f}")
+print(f"F1 Score: {f1:.4f}")
